@@ -36,10 +36,11 @@ interface OrbProps {
   y: SharedValue<number>;
   scaleX: SharedValue<number>;
   scaleY: SharedValue<number>;
+  rotate: SharedValue<number>;
   active: SharedValue<boolean>;
 }
 
-const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
+const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, rotate, active }) => {
   const style = useAnimatedStyle(() => {
     const scale = withSpring(active.value ? 1 : 0, {
       damping: 15,
@@ -55,6 +56,7 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
       transform: [
         { scaleX: scaleX.value },
         { scaleY: scaleY.value },
+        { rotate: `${rotate.value}rad` }, // Use rotation for a more fluid feel
         { scale },
       ],
       overflow: 'hidden',
@@ -66,9 +68,9 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
       <BlurView intensity={80} style={StyleSheet.absoluteFill}>
         <LinearGradient
           colors={[
-            'rgba(255, 180, 0, 0.5)',
-            'rgba(255, 0, 255, 0.4)',
-            'rgba(0, 220, 255, 0.5)',
+            'rgba(255, 180, 0, 0.6)',
+            'rgba(255, 0, 255, 0.5)',
+            'rgba(0, 220, 255, 0.6)',
           ]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -87,6 +89,7 @@ export default function HomeScreen() {
   const isTouching = useSharedValue(false);
   const scaleX = useSharedValue(1);
   const scaleY = useSharedValue(1);
+  const rotation = useSharedValue(0);
   const longPressTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // State for the "after tap" ripple transition
@@ -101,7 +104,6 @@ export default function HomeScreen() {
       touchX.value = locationX;
       touchY.value = locationY;
 
-      // Long press logic to trigger the ripple transition
       longPressTimeout.current = setTimeout(() => {
         ripple.value = { x: pageX, y: pageY, scale: 0 };
         ripple.value.scale = withTiming(1, { duration: 800 }, () => {
@@ -126,21 +128,22 @@ export default function HomeScreen() {
         stiffness: 150,
       });
 
-      // This is the logic for the "wavy" stretching effect
-      const velocityScale = 0.2;
-      const stretchX = Math.abs(gestureState.vx) * velocityScale;
-      const stretchY = Math.abs(gestureState.vy) * velocityScale;
+      // This advanced logic creates the "wavy" effect by stretching and rotating the orb
+      const { vx, vy } = gestureState;
+      const velocity = Math.sqrt(vx * vx + vy * vy);
+      const angle = Math.atan2(vy, vx);
 
-      const newScaleX = Math.max(0.8, Math.min(1 + stretchX - stretchY, 1.4));
-      const newScaleY = Math.max(0.8, Math.min(1 + stretchY - stretchX, 1.4));
+      const stretch = Math.min(1 + velocity * 0.3, 1.5); // Clamp the stretch
 
-      scaleX.value = withSpring(newScaleX, { damping: 10, stiffness: 100 });
-      scaleY.value = withSpring(newScaleY, { damping: 10, stiffness: 100 });
+      scaleX.value = withSpring(stretch, { damping: 10, stiffness: 100 });
+      scaleY.value = withSpring(2 - stretch, { damping: 10, stiffness: 100 }); // Squash perpendicular to stretch
+      rotation.value = withSpring(angle, { damping: 15, stiffness: 120 });
     },
     onPanResponderRelease: () => {
       if (longPressTimeout.current) clearTimeout(longPressTimeout.current);
 
       isTouching.value = false;
+      // Spring back to a perfect circle
       scaleX.value = withSpring(1, { damping: 10, stiffness: 100 });
       scaleY.value = withSpring(1, { damping: 10, stiffness: 100 });
     },
@@ -155,8 +158,8 @@ export default function HomeScreen() {
       borderRadius: SCREEN_WIDTH * 1.25,
       left: x - SCREEN_WIDTH * 1.25,
       top: y - SCREEN_WIDTH * 1.25,
-      backgroundColor: 'black',
       transform: [{ scale }],
+      overflow: 'hidden',
     };
   });
 
@@ -166,7 +169,7 @@ export default function HomeScreen() {
         <StatusBar style="light" />
         <Image
           source={{
-            uri: 'https://images.pexels.com/photos/1528660/pexels-photo-1528660.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2',
+            uri: 'https://images.pexels.com/photos/1528660/pexels-photo-1528660.jpeg',
           }}
           style={styles.backgroundImage}
         />
@@ -186,7 +189,7 @@ export default function HomeScreen() {
       <StatusBar style="light" />
       <Image
         source={{
-          uri: 'https://images.pexels.com/photos/933054/pexels-photo-933054.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2',
+          uri: 'https://images.pexels.com/photos/933054/pexels-photo-933054.jpeg',
         }}
         style={styles.backgroundImage}
       />
@@ -196,6 +199,7 @@ export default function HomeScreen() {
         y={touchY}
         scaleX={scaleX}
         scaleY={scaleY}
+        rotate={rotation}
         active={isTouching}
       />
 
@@ -209,13 +213,12 @@ export default function HomeScreen() {
             <Home size={24} color="white" />
           </TouchableOpacity>
         </View>
-
         <View style={styles.cardContainer}>
           <BlurView intensity={30} tint="dark" style={styles.cardBlur}>
             <View style={styles.notificationContent}>
               <Image
                 source={{
-                  uri: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=100',
+                  uri: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg',
                 }}
                 style={styles.profileImage}
               />
@@ -231,7 +234,6 @@ export default function HomeScreen() {
             </View>
           </BlurView>
         </View>
-
         <View style={styles.mainContent}>
           <Text style={styles.messageTitle}>Sam Messaged</Text>
           <View style={styles.ratingContainer}>
@@ -258,7 +260,18 @@ export default function HomeScreen() {
       <Animated.View
         style={[styles.rippleOverlay, rippleStyle]}
         pointerEvents="none"
-      />
+      >
+        <LinearGradient
+          colors={[
+            'rgba(255, 180, 0, 0.8)',
+            'rgba(255, 0, 255, 0.7)',
+            'rgba(0, 220, 255, 0.8)',
+          ]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
     </View>
   );
 }
@@ -391,7 +404,6 @@ const styles = StyleSheet.create({
   },
   orbGradient: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 175,
   },
   rippleOverlay: {
     zIndex: 9999,
@@ -401,10 +413,6 @@ const styles = StyleSheet.create({
     top: 60,
     left: 20,
     zIndex: 10,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 15,
   },
   backText: {
     fontSize: 18,
