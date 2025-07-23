@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,536 +8,296 @@ import {
   Image,
   Dimensions,
   PanResponder,
+  GestureResponderEvent,
+  PanResponderGestureState,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import {
+import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  SharedValue,
   withTiming,
   runOnJS,
-  interpolate,
-  Extrapolate,
-  withSequence,
-  withDelay,
-  withRepeat,
 } from 'react-native-reanimated';
-import Animated from 'react-native-reanimated';
-import { Chrome as Home, Send, MoveHorizontal as MoreHorizontal } from 'lucide-react-native';
+import {
+  Chrome as Home,
+  Send,
+  MoveHorizontal as MoreHorizontal,
+} from 'lucide-react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+// --- Component for the EXACT Wavy Orb Effect from the video ---
+interface OrbProps {
+  x: SharedValue<number>;
+  y: SharedValue<number>;
+  scaleX: SharedValue<number>;
+  scaleY: SharedValue<number>;
+  active: SharedValue<boolean>;
+}
+
+const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
+  const style = useAnimatedStyle(() => {
+    const scale = withSpring(active.value ? 1 : 0, {
+      damping: 15,
+      stiffness: 120,
+    });
+    return {
+      position: 'absolute',
+      width: 350,
+      height: 350,
+      borderRadius: 175,
+      left: x.value - 175,
+      top: y.value - 175,
+      transform: [
+        { scaleX: scaleX.value },
+        { scaleY: scaleY.value },
+        { scale },
+      ],
+      overflow: 'hidden',
+    };
+  });
+
+  return (
+    <Animated.View style={style}>
+      <BlurView intensity={80} style={StyleSheet.absoluteFill}>
+        <LinearGradient
+          colors={[
+            'rgba(255, 180, 0, 0.5)',
+            'rgba(255, 0, 255, 0.4)',
+            'rgba(0, 220, 255, 0.5)',
+          ]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.orbGradient}
+        />
+      </BlurView>
+    </Animated.View>
+  );
+};
+
+// --- Main Home Screen Component ---
 export default function HomeScreen() {
   const [showSecondScreen, setShowSecondScreen] = useState(false);
-  
-  // Ripple Blur Transition
-  const rippleScale = useSharedValue(0);
-  const rippleOpacity = useSharedValue(0);
-  const blurIntensity = useSharedValue(0);
-  const rippleX = useSharedValue(SCREEN_WIDTH / 2);
-  const rippleY = useSharedValue(100);
-  
-  // Liquid Gradient Cursor Trail
-  const [isTrailActive, setIsTrailActive] = useState(false);
-  const cursorX = useSharedValue(SCREEN_WIDTH / 2);
-  const cursorY = useSharedValue(SCREEN_HEIGHT / 2);
-  const liquidStretch = useSharedValue(0);
-  const shakeX = useSharedValue(0);
-  const shakeY = useSharedValue(0);
-  
-  // Multiple liquid trail elements with black/gray gradient
-  const liquidTrails = Array.from({ length: 8 }, (_, index) => ({
-    x: useSharedValue(SCREEN_WIDTH / 2),
-    y: useSharedValue(SCREEN_HEIGHT / 2),
-    scale: useSharedValue(0),
-    opacity: useSharedValue(0),
-    rotation: useSharedValue(0),
-  }));
+  const touchX = useSharedValue(SCREEN_WIDTH / 2);
+  const touchY = useSharedValue(SCREEN_HEIGHT / 2);
+  const isTouching = useSharedValue(false);
+  const scaleX = useSharedValue(1);
+  const scaleY = useSharedValue(1);
+  const longPressTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Pan responder for liquid gradient cursor trail
+  // State for the "after tap" ripple transition
+  const ripple = useSharedValue({ x: 0, y: 0, scale: 0 });
+
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: (evt) => {
-      setIsTrailActive(true);
-      const { locationX, locationY } = evt.nativeEvent;
-      cursorX.value = locationX;
-      cursorY.value = locationY;
-      
-      // Start shake effect
-      shakeX.value = withRepeat(
-        withSequence(
-          withTiming(3, { duration: 50 }),
-          withTiming(-3, { duration: 50 }),
-          withTiming(0, { duration: 50 })
-        ),
-        -1,
-        true
-      );
-      shakeY.value = withRepeat(
-        withSequence(
-          withTiming(2, { duration: 60 }),
-          withTiming(-2, { duration: 60 }),
-          withTiming(0, { duration: 60 })
-        ),
-        -1,
-        true
-      );
-      
-      // Activate liquid trails with stagger and rotation
-      liquidTrails.forEach((trail, index) => {
-        const delay = index * 30;
-        trail.scale.value = withDelay(delay, withSpring(1 - (index * 0.05), { damping: 15, stiffness: 200 }));
-        trail.opacity.value = withDelay(delay, withTiming(0.9 - (index * 0.06), { duration: 150 }));
-        trail.rotation.value = withDelay(delay, withSpring(index * 30, { damping: 20, stiffness: 150 }));
-      });
-      
-      liquidStretch.value = withSpring(1.5, { damping: 10, stiffness: 300 });
+    onPanResponderGrant: (evt: GestureResponderEvent) => {
+      isTouching.value = true;
+      const { locationX, locationY, pageX, pageY } = evt.nativeEvent;
+      touchX.value = locationX;
+      touchY.value = locationY;
+
+      // Long press logic to trigger the ripple transition
+      longPressTimeout.current = setTimeout(() => {
+        ripple.value = { x: pageX, y: pageY, scale: 0 };
+        ripple.value.scale = withTiming(1, { duration: 800 }, () => {
+          runOnJS(setShowSecondScreen)(true);
+        });
+      }, 700);
     },
-    onPanResponderMove: (evt) => {
-      const { locationX, locationY } = evt.nativeEvent;
-      cursorX.value = locationX;
-      cursorY.value = locationY;
-      
-      // Update liquid trails with fluid, organic movement
-      liquidTrails.forEach((trail, index) => {
-        const delay = (index + 1) * 40;
-        const elasticity = 120 - (index * 8);
-        const damping = 8 + (index * 1.5);
-        
-        setTimeout(() => {
-          trail.x.value = withSpring(locationX + Math.sin(index * 0.5) * 10, { 
-            damping, 
-            stiffness: elasticity 
-          });
-          trail.y.value = withSpring(locationY + Math.cos(index * 0.5) * 10, { 
-            damping, 
-            stiffness: elasticity 
-          });
-        }, delay);
+    onPanResponderMove: (
+      evt: GestureResponderEvent,
+      gestureState: PanResponderGestureState
+    ) => {
+      if (longPressTimeout.current) clearTimeout(longPressTimeout.current);
+
+      touchX.value = withSpring(evt.nativeEvent.locationX, {
+        mass: 0.6,
+        damping: 20,
+        stiffness: 150,
       });
-      
-      // Liquid stretch and morph effect
-      liquidStretch.value = withSequence(
-        withTiming(2, { duration: 100 }),
-        withSpring(1.2, { damping: 12, stiffness: 400 })
-      );
+      touchY.value = withSpring(evt.nativeEvent.locationY, {
+        mass: 0.6,
+        damping: 20,
+        stiffness: 150,
+      });
+
+      // This is the logic for the "wavy" stretching effect
+      const velocityScale = 0.2;
+      const stretchX = Math.abs(gestureState.vx) * velocityScale;
+      const stretchY = Math.abs(gestureState.vy) * velocityScale;
+
+      const newScaleX = Math.max(0.8, Math.min(1 + stretchX - stretchY, 1.4));
+      const newScaleY = Math.max(0.8, Math.min(1 + stretchY - stretchX, 1.4));
+
+      scaleX.value = withSpring(newScaleX, { damping: 10, stiffness: 100 });
+      scaleY.value = withSpring(newScaleY, { damping: 10, stiffness: 100 });
     },
     onPanResponderRelease: () => {
-      // Stop shake effect
-      shakeX.value = withTiming(0, { duration: 200 });
-      shakeY.value = withTiming(0, { duration: 200 });
-      
-      // Hide liquid trails with reverse stagger
-      liquidTrails.forEach((trail, index) => {
-        const delay = index * 25;
-        trail.scale.value = withDelay(delay, withTiming(0, { duration: 300 }));
-        trail.opacity.value = withDelay(delay, withTiming(0, { duration: 300 }));
-        trail.rotation.value = withDelay(delay, withSpring(0, { damping: 15, stiffness: 200 }));
-      });
-      
-      liquidStretch.value = withSpring(0, { damping: 15, stiffness: 200 });
-      
-      setTimeout(() => {
-        setIsTrailActive(false);
-      }, 800);
+      if (longPressTimeout.current) clearTimeout(longPressTimeout.current);
+
+      isTouching.value = false;
+      scaleX.value = withSpring(1, { damping: 10, stiffness: 100 });
+      scaleY.value = withSpring(1, { damping: 10, stiffness: 100 });
     },
   });
 
-  const triggerRippleTransition = (touchX, touchY, callback) => {
-    rippleX.value = touchX;
-    rippleY.value = touchY;
-    
-    // Start ripple effect
-    rippleScale.value = 0;
-    rippleOpacity.value = 1;
-    blurIntensity.value = 0;
-    
-    // Animate ripple expansion with blur
-    rippleScale.value = withTiming(15, { duration: 1000 });
-    rippleOpacity.value = withSequence(
-      withTiming(0.8, { duration: 300 }),
-      withTiming(0, { duration: 700 })
-    );
-    blurIntensity.value = withSequence(
-      withTiming(25, { duration: 500 }),
-      withTiming(0, { duration: 500 })
-    );
-    
-    // Execute callback at peak blur
-    setTimeout(() => {
-      runOnJS(callback)();
-    }, 500);
-  };
-
-  const handleHomePress = (evt) => {
-    const { locationX, locationY } = evt.nativeEvent;
-    triggerRippleTransition(locationX, locationY, () => setShowSecondScreen(true));
-  };
-
-  const handleBackPress = (evt) => {
-    const { locationX, locationY } = evt.nativeEvent;
-    triggerRippleTransition(locationX, locationY, () => setShowSecondScreen(false));
-  };
-
-  // Animated styles for ripple blur transition
-  const rippleAnimatedStyle = useAnimatedStyle(() => {
+  const rippleStyle = useAnimatedStyle(() => {
+    const { x, y, scale } = ripple.value;
     return {
-      transform: [
-        { translateX: rippleX.value - 50 },
-        { translateY: rippleY.value - 50 },
-        { scale: rippleScale.value },
-      ],
-      opacity: rippleOpacity.value,
-    };
-  });
-
-  const blurOverlayStyle = useAnimatedStyle(() => {
-    return {
-      opacity: blurIntensity.value > 0 ? 1 : 0,
-    };
-  });
-
-  // Liquid gradient cursor styles
-  const liquidCursorStyle = useAnimatedStyle(() => {
-    const scale = interpolate(
-      liquidStretch.value,
-      [0, 1, 1.5, 2],
-      [0, 1, 1.3, 1.8],
-      Extrapolate.CLAMP
-    );
-    
-    return {
-      transform: [
-        { translateX: cursorX.value - 30 + shakeX.value },
-        { translateY: cursorY.value - 30 + shakeY.value },
-        { scale },
-      ],
-      opacity: isTrailActive ? 1 : 0,
-    };
-  });
-
-  // Individual liquid trail styles
-  const getLiquidTrailStyle = (index) => {
-    return useAnimatedStyle(() => {
-      const trail = liquidTrails[index];
-      const baseScale = 1 - (index * 0.08);
-      
-      return {
-        transform: [
-          { translateX: trail.x.value - 25 + shakeX.value * (1 - index * 0.1) },
-          { translateY: trail.y.value - 25 + shakeY.value * (1 - index * 0.1) },
-          { scale: trail.scale.value * baseScale },
-          { rotate: `${trail.rotation.value}deg` },
-        ],
-        opacity: trail.opacity.value,
-      };
-    });
-  };
-
-  // Black and gray gradient colors for liquid trails
-  const getGradientColors = (index) => {
-    const grayShades = [
-      ['#000000', '#333333', '#666666'],
-      ['#111111', '#444444', '#777777'],
-      ['#222222', '#555555', '#888888'],
-      ['#000000', '#2a2a2a', '#555555'],
-    ];
-    return grayShades[index % grayShades.length];
-  };
-
-  // Screen shake effect for the entire container
-  const screenShakeStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { translateX: shakeX.value * 2 },
-        { translateY: shakeY.value * 2 },
-      ],
+      position: 'absolute',
+      width: SCREEN_WIDTH * 2.5,
+      height: SCREEN_WIDTH * 2.5,
+      borderRadius: SCREEN_WIDTH * 1.25,
+      left: x - SCREEN_WIDTH * 1.25,
+      top: y - SCREEN_WIDTH * 1.25,
+      backgroundColor: 'black',
+      transform: [{ scale }],
     };
   });
 
   if (showSecondScreen) {
     return (
-      <Animated.View style={[styles.container, screenShakeStyle]}>
+      <View style={styles.container}>
         <StatusBar style="light" />
-        
-        {/* Background Image */}
         <Image
           source={{
-            uri: 'https://images.pexels.com/photos/1287145/pexels-photo-1287145.jpeg?auto=compress&cs=tinysrgb&w=800',
+            uri: 'https://images.pexels.com/photos/1528660/pexels-photo-1528660.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2',
           }}
           style={styles.backgroundImage}
         />
-        <View style={styles.backgroundOverlay} />
-        
-        {/* Ripple Blur Transition */}
-        <Animated.View style={[styles.blurOverlay, blurOverlayStyle]} pointerEvents="none">
-          <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
-        </Animated.View>
-        
-        <Animated.View style={[styles.rippleEffect, rippleAnimatedStyle]} pointerEvents="none">
-          <LinearGradient
-            colors={['rgba(255,255,255,0.3)', 'rgba(100,150,255,0.2)', 'transparent']}
-            style={styles.rippleGradient}
-          />
-        </Animated.View>
-        
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
-              <Text style={styles.backText}>←</Text>
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Second Screen</Text>
-            <View style={styles.headerSpacer} />
-          </View>
-          
-          {/* Content */}
-          <View style={styles.secondScreenContent}>
-            <Text style={styles.secondScreenTitle}>Welcome!</Text>
-            <Text style={styles.secondScreenText}>
-              This screen was accessed with a beautiful ripple blur transition.
-            </Text>
-          </View>
-        </ScrollView>
-      </Animated.View>
+        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => setShowSecondScreen(false)}
+        >
+          <Text style={styles.backText}>← Back</Text>
+        </TouchableOpacity>
+      </View>
     );
   }
 
   return (
-    <Animated.View style={[styles.container, screenShakeStyle]} {...panResponder.panHandlers}>
+    <View style={styles.container} {...panResponder.panHandlers}>
       <StatusBar style="light" />
-      
-      {/* Background Image */}
       <Image
         source={{
-          uri: 'https://images.pexels.com/photos/1287145/pexels-photo-1287145.jpeg?auto=compress&cs=tinysrgb&w=800',
+          uri: 'https://images.pexels.com/photos/933054/pexels-photo-933054.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2',
         }}
         style={styles.backgroundImage}
       />
-      <View style={styles.backgroundOverlay} />
-      
-      {/* Ripple Blur Transition */}
-      <Animated.View style={[styles.blurOverlay, blurOverlayStyle]} pointerEvents="none">
-        <BlurView intensity={blurIntensity} tint="dark" style={StyleSheet.absoluteFill} />
-      </Animated.View>
-      
-      <Animated.View style={[styles.rippleEffect, rippleAnimatedStyle]} pointerEvents="none">
-        <LinearGradient
-          colors={['rgba(255,255,255,0.3)', 'rgba(100,150,255,0.2)', 'transparent']}
-          style={styles.rippleGradient}
-        />
-      </Animated.View>
-      
-      {/* Liquid Gradient Cursor Trail */}
-      {isTrailActive && (
-        <View style={styles.cursorContainer} pointerEvents="none">
-          {/* Liquid Trail Elements */}
-          {liquidTrails.map((_, index) => (
-            <Animated.View key={`liquid-${index}`} style={[styles.liquidTrail, getLiquidTrailStyle(index)]}>
-              <LinearGradient
-                colors={getGradientColors(index)}
-                style={styles.liquidGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              />
-            </Animated.View>
-          ))}
-          
-          {/* Main Liquid Cursor */}
-          <Animated.View style={[styles.liquidCursor, liquidCursorStyle]}>
-            <LinearGradient
-              colors={['#000000', '#333333', '#666666', '#999999']}
-              style={styles.mainLiquidGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-          </Animated.View>
-        </View>
-      )}
-      
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Top Header */}
+
+      <Orb
+        x={touchX}
+        y={touchY}
+        scaleX={scaleX}
+        scaleY={scaleY}
+        active={isTouching}
+      />
+
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.topHeader}>
           <Text style={styles.genieTitle}>Genie</Text>
-          <TouchableOpacity onPress={handleHomePress} style={styles.homeButton}>
+          <TouchableOpacity>
             <Home size={24} color="white" />
           </TouchableOpacity>
         </View>
-        
-        {/* Sam's Notification Card */}
-        <View style={styles.notificationCard}>
-          <View style={styles.notificationContent}>
-            <Image
-              source={{
-                uri: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=100',
-              }}
-              style={styles.profileImage}
-            />
-            <View style={styles.notificationText}>
-              <Text style={styles.notificationName}>Sam</Text>
-              <Text style={styles.notificationMessage}>Shared a portal with you</Text>
+
+        <View style={styles.cardContainer}>
+          <BlurView intensity={30} tint="dark" style={styles.cardBlur}>
+            <View style={styles.notificationContent}>
+              <Image
+                source={{
+                  uri: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=100',
+                }}
+                style={styles.profileImage}
+              />
+              <View style={styles.notificationText}>
+                <Text style={styles.notificationName}>Sam</Text>
+                <Text style={styles.notificationMessage}>
+                  Shared a portal with you
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.replyButton}>
+                <Text style={styles.replyText}>Reply</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.replyButton}>
-              <Text style={styles.replyText}>Reply</Text>
-            </TouchableOpacity>
-          </View>
+          </BlurView>
         </View>
-        
-        {/* Main Content Area */}
+
         <View style={styles.mainContent}>
-          {/* Sam Messaged Section */}
-          <View style={styles.messageSection}>
-            <Text style={styles.messageTitle}>Sam Messaged</Text>
-            <View style={styles.ratingContainer}>
-              <Text style={styles.starIcon}>⭐</Text>
-              <Text style={styles.ratingText}>4.5</Text>
-            </View>
-            <TouchableOpacity style={styles.directionsButton}>
-              <Text style={styles.directionsIcon}>🧭</Text>
-              <Text style={styles.directionsText}>Directions</Text>
-            </TouchableOpacity>
+          <Text style={styles.messageTitle}>Sam Messaged</Text>
+          <View style={styles.ratingContainer}>
+            <Text style={styles.starIcon}>⭐</Text>
+            <Text style={styles.ratingText}>4.5</Text>
           </View>
-        </View>
-        
-        {/* Bottom Navigation */}
-        <View style={styles.bottomNavigation}>
-          <TouchableOpacity style={styles.navButton}>
-            <View style={styles.navIcon}>
-              <Send size={20} color="white" />
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navButton}>
-            <View style={styles.navIcon}>
-              <MoreHorizontal size={20} color="white" />
-            </View>
+          <TouchableOpacity style={styles.directionsButton}>
+            <Text style={styles.directionsIcon}>🧭</Text>
+            <Text style={styles.directionsText}>Directions</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </Animated.View>
+
+      <View style={styles.bottomNavContainer}>
+        <BlurView intensity={30} tint="dark" style={styles.bottomNavBlur}>
+          <TouchableOpacity style={styles.navButton}>
+            <Send size={24} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navButton}>
+            <MoreHorizontal size={24} color="white" />
+          </TouchableOpacity>
+        </BlurView>
+      </View>
+      <Animated.View
+        style={[styles.rippleOverlay, rippleStyle]}
+        pointerEvents="none"
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#000',
   },
   backgroundImage: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  backgroundOverlay: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    ...StyleSheet.absoluteFillObject,
   },
   scrollView: {
     flex: 1,
   },
-  
-  // Ripple Blur Transition Effects
-  blurOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 1000,
-  },
-  rippleEffect: {
-    position: 'absolute',
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    zIndex: 999,
-  },
-  rippleGradient: {
-    flex: 1,
-    borderRadius: 50,
-    shadowColor: '#4A90E2',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 20,
-  },
-  
-  // Liquid Gradient Cursor Trail
-  cursorContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 998,
-  },
-  liquidCursor: {
-    position: 'absolute',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-  },
-  mainLiquidGradient: {
-    flex: 1,
-    borderRadius: 30,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 15,
-  },
-  liquidTrail: {
-    position: 'absolute',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
-  liquidGradient: {
-    flex: 1,
-    borderRadius: 25,
-    shadowColor: '#333333',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 10,
-  },
-  
-  // Top Header
   topHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 20,
     paddingTop: 60,
-    paddingHorizontal: 30,
-    paddingBottom: 30,
+    paddingBottom: 20,
   },
   genieTitle: {
-    fontSize: 28,
-    fontWeight: '300',
+    fontSize: 32,
     color: 'white',
-    fontFamily: 'Inter-Regular',
+    fontWeight: '300',
   },
-  homeButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  
-  // Sam's Notification Card
-  notificationCard: {
-    marginHorizontal: 30,
-    marginBottom: 40,
-    borderRadius: 25,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+  cardContainer: {
+    marginHorizontal: 20,
+    borderRadius: 20,
     overflow: 'hidden',
+  },
+  cardBlur: {
+    padding: 20,
   },
   notificationContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
   },
   profileImage: {
     width: 50,
@@ -552,44 +312,34 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: 'white',
-    marginBottom: 3,
-    fontFamily: 'Inter-SemiBold',
   },
   notificationMessage: {
     fontSize: 15,
     color: 'rgba(255, 255, 255, 0.8)',
-    fontFamily: 'Inter-Regular',
   },
   replyButton: {
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.8)',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
   replyText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '500',
-    fontFamily: 'Inter-SemiBold',
   },
-  
-  // Main Content
   mainContent: {
     flex: 1,
     justifyContent: 'flex-end',
-    paddingHorizontal: 30,
-    paddingBottom: 100,
-  },
-  messageSection: {
     alignItems: 'center',
+    paddingTop: Dimensions.get('window').height * 0.35,
+    paddingBottom: 150,
   },
   messageTitle: {
     fontSize: 32,
     fontWeight: '300',
     color: 'white',
     marginBottom: 15,
-    fontFamily: 'Inter-Regular',
   },
   ratingContainer: {
     flexDirection: 'row',
@@ -604,7 +354,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 18,
     fontWeight: '500',
-    fontFamily: 'Inter-SemiBold',
   },
   directionsButton: {
     flexDirection: 'row',
@@ -622,80 +371,43 @@ const styles = StyleSheet.create({
     color: '#333',
     fontSize: 16,
     fontWeight: '600',
-    fontFamily: 'Inter-SemiBold',
   },
-  
-  // Bottom Navigation
-  bottomNavigation: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 60,
-    paddingBottom: 40,
+  bottomNavContainer: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: 40,
+    left: 60,
+    right: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+  },
+  bottomNavBlur: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 15,
   },
   navButton: {
-    alignItems: 'center',
+    padding: 10,
   },
-  navIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  orbGradient: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 175,
   },
-  
-  // Second Screen
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 60,
-    paddingHorizontal: 30,
-    paddingBottom: 20,
+  rippleOverlay: {
+    zIndex: 9999,
   },
   backButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 15,
   },
   backText: {
-    fontSize: 24,
+    fontSize: 18,
     color: 'white',
-    fontWeight: '300',
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 20,
-    fontWeight: '500',
-    color: 'white',
-    textAlign: 'center',
-    fontFamily: 'Inter-SemiBold',
-  },
-  headerSpacer: {
-    width: 44,
-  },
-  secondScreenContent: {
-    padding: 30,
-    alignItems: 'center',
-    marginTop: 100,
-  },
-  secondScreenTitle: {
-    fontSize: 28,
-    fontWeight: '300',
-    color: 'white',
-    marginBottom: 20,
-    textAlign: 'center',
-    fontFamily: 'Inter-Regular',
-  },
-  secondScreenText: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
-    textAlign: 'center',
-    lineHeight: 24,
-    fontFamily: 'Inter-Regular',
   },
 });
