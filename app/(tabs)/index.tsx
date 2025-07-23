@@ -30,17 +30,16 @@ import {
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// --- Component for the EXACT Wavy Orb Effect from the video ---
+// --- Component for the Wavy Orb Effect ---
 interface OrbProps {
   x: SharedValue<number>;
   y: SharedValue<number>;
   scaleX: SharedValue<number>;
   scaleY: SharedValue<number>;
-  rotate: SharedValue<number>;
   active: SharedValue<boolean>;
 }
 
-const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, rotate, active }) => {
+const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
   const style = useAnimatedStyle(() => {
     const scale = withSpring(active.value ? 1 : 0, {
       damping: 15,
@@ -56,7 +55,6 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, rotate, active }) => {
       transform: [
         { scaleX: scaleX.value },
         { scaleY: scaleY.value },
-        { rotate: `${rotate.value}rad` }, // Use rotation for a more fluid feel
         { scale },
       ],
       overflow: 'hidden',
@@ -65,12 +63,12 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, rotate, active }) => {
 
   return (
     <Animated.View style={style}>
-      <BlurView intensity={80} style={StyleSheet.absoluteFill}>
+      <BlurView intensity={70} style={StyleSheet.absoluteFill}>
         <LinearGradient
           colors={[
-            'rgba(255, 180, 0, 0.6)',
-            'rgba(255, 0, 255, 0.5)',
-            'rgba(0, 220, 255, 0.6)',
+            'rgba(0,0,0,0.4)',
+            'rgba(150,150,150,0.2)',
+            'rgba(50,50,50,0.4)',
           ]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -84,32 +82,37 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, rotate, active }) => {
 // --- Main Home Screen Component ---
 export default function HomeScreen() {
   const [showSecondScreen, setShowSecondScreen] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
   const touchX = useSharedValue(SCREEN_WIDTH / 2);
   const touchY = useSharedValue(SCREEN_HEIGHT / 2);
   const isTouching = useSharedValue(false);
   const scaleX = useSharedValue(1);
   const scaleY = useSharedValue(1);
-  const rotation = useSharedValue(0);
   const longPressTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // State for the "after tap" ripple transition
+  // Shared values for the new slideshow transition
   const ripple = useSharedValue({ x: 0, y: 0, scale: 0 });
+  const contentOpacity = useSharedValue(1);
 
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: (evt: GestureResponderEvent) => {
+      runOnJS(setIsPressed)(true);
       isTouching.value = true;
       const { locationX, locationY, pageX, pageY } = evt.nativeEvent;
       touchX.value = locationX;
       touchY.value = locationY;
 
       longPressTimeout.current = setTimeout(() => {
+        // Start the slideshow effect: fade out content and expand ripple
+        contentOpacity.value = withTiming(0, { duration: 600 });
         ripple.value = { x: pageX, y: pageY, scale: 0 };
-        ripple.value.scale = withTiming(1, { duration: 800 }, () => {
+        // Slower ripple duration for a more graceful effect
+        ripple.value.scale = withTiming(1, { duration: 1200 }, () => {
           runOnJS(setShowSecondScreen)(true);
         });
-      }, 700);
+      }, 800); // Slightly longer delay for the long press
     },
     onPanResponderMove: (
       evt: GestureResponderEvent,
@@ -128,22 +131,21 @@ export default function HomeScreen() {
         stiffness: 150,
       });
 
-      // This advanced logic creates the "wavy" effect by stretching and rotating the orb
-      const { vx, vy } = gestureState;
-      const velocity = Math.sqrt(vx * vx + vy * vy);
-      const angle = Math.atan2(vy, vx);
+      const velocityScale = 0.2;
+      const stretchX = Math.abs(gestureState.vx) * velocityScale;
+      const stretchY = Math.abs(gestureState.vy) * velocityScale;
 
-      const stretch = Math.min(1 + velocity * 0.3, 1.5); // Clamp the stretch
+      const newScaleX = Math.max(0.8, Math.min(1 + stretchX - stretchY, 1.4));
+      const newScaleY = Math.max(0.8, Math.min(1 + stretchY - stretchX, 1.4));
 
-      scaleX.value = withSpring(stretch, { damping: 10, stiffness: 100 });
-      scaleY.value = withSpring(2 - stretch, { damping: 10, stiffness: 100 }); // Squash perpendicular to stretch
-      rotation.value = withSpring(angle, { damping: 15, stiffness: 120 });
+      scaleX.value = withSpring(newScaleX, { damping: 10, stiffness: 100 });
+      scaleY.value = withSpring(newScaleY, { damping: 10, stiffness: 100 });
     },
     onPanResponderRelease: () => {
+      runOnJS(setIsPressed)(false);
       if (longPressTimeout.current) clearTimeout(longPressTimeout.current);
 
       isTouching.value = false;
-      // Spring back to a perfect circle
       scaleX.value = withSpring(1, { damping: 10, stiffness: 100 });
       scaleY.value = withSpring(1, { damping: 10, stiffness: 100 });
     },
@@ -158,10 +160,25 @@ export default function HomeScreen() {
       borderRadius: SCREEN_WIDTH * 1.25,
       left: x - SCREEN_WIDTH * 1.25,
       top: y - SCREEN_WIDTH * 1.25,
+      backgroundColor: 'black',
       transform: [{ scale }],
-      overflow: 'hidden',
     };
   });
+
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+  }));
+
+  const handleBackPress = () => {
+    setShowSecondScreen(false);
+    // Reset animations for the next transition
+    contentOpacity.value = withTiming(1, { duration: 600 });
+    ripple.value = { ...ripple.value, scale: 0 };
+  };
+
+  const backgroundImageUri = isPressed
+    ? 'https://images.pexels.com/photos/3225517/pexels-photo-3225517.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2'
+    : 'https://images.pexels.com/photos/933054/pexels-photo-933054.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2';
 
   if (showSecondScreen) {
     return (
@@ -174,10 +191,7 @@ export default function HomeScreen() {
           style={styles.backgroundImage}
         />
         <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => setShowSecondScreen(false)}
-        >
+        <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
       </View>
@@ -188,9 +202,7 @@ export default function HomeScreen() {
     <View style={styles.container} {...panResponder.panHandlers}>
       <StatusBar style="light" />
       <Image
-        source={{
-          uri: 'https://images.pexels.com/photos/933054/pexels-photo-933054.jpeg',
-        }}
+        source={{ uri: backgroundImageUri }}
         style={styles.backgroundImage}
       />
 
@@ -199,79 +211,69 @@ export default function HomeScreen() {
         y={touchY}
         scaleX={scaleX}
         scaleY={scaleY}
-        rotate={rotation}
         active={isTouching}
       />
 
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.topHeader}>
-          <Text style={styles.genieTitle}>Genie</Text>
-          <TouchableOpacity>
-            <Home size={24} color="white" />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.cardContainer}>
-          <BlurView intensity={30} tint="dark" style={styles.cardBlur}>
-            <View style={styles.notificationContent}>
-              <Image
-                source={{
-                  uri: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg',
-                }}
-                style={styles.profileImage}
-              />
-              <View style={styles.notificationText}>
-                <Text style={styles.notificationName}>Sam</Text>
-                <Text style={styles.notificationMessage}>
-                  Shared a portal with you
-                </Text>
+      <Animated.View style={[StyleSheet.absoluteFill, contentStyle]}>
+        <ScrollView
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.topHeader}>
+            <Text style={styles.genieTitle}>Genie</Text>
+            <TouchableOpacity>
+              <Home size={24} color="white" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.cardContainer}>
+            <BlurView intensity={30} tint="dark" style={styles.cardBlur}>
+              <View style={styles.notificationContent}>
+                <Image
+                  source={{
+                    uri: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg',
+                  }}
+                  style={styles.profileImage}
+                />
+                <View style={styles.notificationText}>
+                  <Text style={styles.notificationName}>Sam</Text>
+                  <Text style={styles.notificationMessage}>
+                    Shared a portal with you
+                  </Text>
+                </View>
+                <TouchableOpacity style={styles.replyButton}>
+                  <Text style={styles.replyText}>Reply</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity style={styles.replyButton}>
-                <Text style={styles.replyText}>Reply</Text>
-              </TouchableOpacity>
+            </BlurView>
+          </View>
+          <View style={styles.mainContent}>
+            <Text style={styles.messageTitle}>Sam Messaged</Text>
+            <View style={styles.ratingContainer}>
+              <Text style={styles.starIcon}>⭐</Text>
+              <Text style={styles.ratingText}>4.5</Text>
             </View>
+            <TouchableOpacity style={styles.directionsButton}>
+              <Text style={styles.directionsIcon}>🧭</Text>
+              <Text style={styles.directionsText}>Directions</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+        <View style={styles.bottomNavContainer}>
+          <BlurView intensity={30} tint="dark" style={styles.bottomNavBlur}>
+            <TouchableOpacity style={styles.navButton}>
+              <Send size={24} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton}>
+              <MoreHorizontal size={24} color="white" />
+            </TouchableOpacity>
           </BlurView>
         </View>
-        <View style={styles.mainContent}>
-          <Text style={styles.messageTitle}>Sam Messaged</Text>
-          <View style={styles.ratingContainer}>
-            <Text style={styles.starIcon}>⭐</Text>
-            <Text style={styles.ratingText}>4.5</Text>
-          </View>
-          <TouchableOpacity style={styles.directionsButton}>
-            <Text style={styles.directionsIcon}>🧭</Text>
-            <Text style={styles.directionsText}>Directions</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+      </Animated.View>
 
-      <View style={styles.bottomNavContainer}>
-        <BlurView intensity={30} tint="dark" style={styles.bottomNavBlur}>
-          <TouchableOpacity style={styles.navButton}>
-            <Send size={24} color="white" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navButton}>
-            <MoreHorizontal size={24} color="white" />
-          </TouchableOpacity>
-        </BlurView>
-      </View>
       <Animated.View
         style={[styles.rippleOverlay, rippleStyle]}
         pointerEvents="none"
-      >
-        <LinearGradient
-          colors={[
-            'rgba(255, 180, 0, 0.8)',
-            'rgba(255, 0, 255, 0.7)',
-            'rgba(0, 220, 255, 0.8)',
-          ]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
+      />
     </View>
   );
 }
@@ -404,6 +406,7 @@ const styles = StyleSheet.create({
   },
   orbGradient: {
     ...StyleSheet.absoluteFillObject,
+    borderRadius: 175,
   },
   rippleOverlay: {
     zIndex: 9999,
