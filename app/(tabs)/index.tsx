@@ -57,7 +57,7 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active, touchX }) => {
       top: y.value - 150,
       transform: [{ scale }],
       overflow: 'hidden',
-      zIndex: 99, // Increased to show above most UI elements
+      zIndex: 95, // Lowered to show UI elements
     };
   });
 
@@ -78,63 +78,38 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active, touchX }) => {
   return (
     <Animated.View style={style}>
       <BlurView
-        intensity={65} // Reduced intensity to better see UI elements
+        intensity={55} // Adjusted for better UI visibility
         tint="default"
         style={[
           StyleSheet.absoluteFill,
           {
             borderRadius: 150,
             overflow: 'hidden',
-            backgroundColor: 'rgba(255, 255, 255, 0.05)', // More transparent
+            backgroundColor: 'rgba(255, 255, 255, 0.05)',
           },
         ]}
       >
-        {/* Background image with reduced opacity */}
         <Animated.Image
           source={{
             uri: 'https://images.pexels.com/photos/3225517/pexels-photo-3225517.jpeg',
           }}
-          style={[imageStyle, { opacity: 0.3 }]} // Reduced opacity to show UI better
+          style={[imageStyle, { opacity: 0.15 }]} // Reduced opacity
           resizeMode="cover"
         />
 
-        {/* UI capture layer */}
-        <View style={[StyleSheet.absoluteFill, { opacity: 1 }]} />
-
-        {/* Glass effect overlay */}
-        <LinearGradient
-          colors={[
-            'transparent',
-            'rgba(255,255,255,0.1)',
-            'rgba(255,255,255,0.15)',
-          ]}
+        {/* Double-layer blur for better content visibility */}
+        <BlurView
+          intensity={25}
+          tint="light"
           style={[
             StyleSheet.absoluteFill,
             {
               borderRadius: 150,
-              transform: [{ scale: 0.9 }],
-              opacity: 0.4,
+              backgroundColor: 'transparent',
             },
           ]}
-          start={{ x: 0.3, y: 0.3 }}
-          end={{ x: 0.7, y: 0.7 }}
         />
       </BlurView>
-
-      {/* Edge blur with reduced intensity */}
-      <BlurView
-        intensity={25}
-        tint="default"
-        style={[
-          StyleSheet.absoluteFill,
-          {
-            borderRadius: 150,
-            opacity: 0.3,
-            borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.15)',
-          },
-        ]}
-      />
     </Animated.View>
   );
 };
@@ -417,7 +392,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 20,
-    zIndex: 99,
+    zIndex: 97, // Increased to show through orb
   },
   genieTitle: {
     fontSize: 32,
@@ -428,8 +403,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderRadius: 20,
     overflow: 'hidden',
-    zIndex: 98, // Ensure it appears above other elements
-    backgroundColor: 'rgba(255, 255, 255, 0.1)', // Added slight background
+    zIndex: 97, // Increased to show through orb
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)', // Added border for double-layer effect
   },
   cardBlur: {
     padding: 20,
@@ -437,6 +414,7 @@ const styles = StyleSheet.create({
   notificationContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    zIndex: 98, // Added zIndex
   },
   profileImage: {
     width: 50,
@@ -461,6 +439,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    zIndex: 98, // Added zIndex
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)', // Added border for double-layer effect
   },
   replyText: {
     color: 'white',
@@ -501,7 +482,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 25,
     paddingVertical: 15,
     borderRadius: 25,
-    zIndex: 99, // Ensure it appears above other elements
+    zIndex: 99,
+    shadowColor: '#fff',
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    elevation: 3,
   },
   directionsIcon: {
     fontSize: 16,
@@ -519,17 +508,24 @@ const styles = StyleSheet.create({
     right: 60,
     borderRadius: 30,
     overflow: 'hidden',
-    zIndex: 98,
+    zIndex: 97, // Increased to show through orb
   },
   bottomNavBlur: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
     paddingVertical: 15,
-    backgroundColor: 'rgba(0,0,0,0.3)', // Added slight background
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)', // Added border for double-layer effect
   },
   navButton: {
     padding: 10,
+    zIndex: 99,
+    backgroundColor: 'rgba(255,255,255,0.05)', // Added subtle background
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)', // Added border for double-layer effect
   },
   orbGradient: {
     ...StyleSheet.absoluteFillObject,
