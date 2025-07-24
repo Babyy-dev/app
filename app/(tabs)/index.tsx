@@ -43,36 +43,54 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
   const style = useAnimatedStyle(() => {
     const scale = withSpring(active.value ? 1 : 0, {
       damping: 15,
-      stiffness: 120,
+      stiffness: 90,
+      mass: 1,
     });
+
     return {
       position: 'absolute',
-      width: 350,
-      height: 350,
-      borderRadius: 175,
-      left: x.value - 175,
-      top: y.value - 175,
-      transform: [
-        { scaleX: scaleX.value },
-        { scaleY: scaleY.value },
-        { scale },
-      ],
+      width: 300,
+      height: 300,
+      borderRadius: 150,
+      left: x.value - 150,
+      top: y.value - 150,
+      transform: [{ scale }],
       overflow: 'hidden',
+      zIndex: 100,
+    };
+  });
+
+  const imageStyle = useAnimatedStyle(() => {
+    return {
+      width: SCREEN_WIDTH,
+      height: SCREEN_HEIGHT,
+      transform: [
+        { translateX: -x.value + 150 },
+        { translateY: -y.value + 150 },
+        { scale: 2 },
+      ],
     };
   });
 
   return (
     <Animated.View style={style}>
-      <BlurView intensity={70} style={StyleSheet.absoluteFill}>
-        <LinearGradient
-          colors={[
-            'rgba(0,0,0,0.4)',
-            'rgba(150,150,150,0.2)',
-            'rgba(50,50,50,0.4)',
-          ]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.orbGradient}
+      <BlurView
+        intensity={25}
+        tint="light"
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            borderRadius: 150,
+            overflow: 'hidden',
+          },
+        ]}
+      >
+        <Animated.Image
+          source={{
+            uri: 'https://images.pexels.com/photos/3225517/pexels-photo-3225517.jpeg',
+          }}
+          style={imageStyle}
+          resizeMode="cover"
         />
       </BlurView>
     </Animated.View>
@@ -98,56 +116,36 @@ export default function HomeScreen() {
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: (evt: GestureResponderEvent) => {
-      runOnJS(setIsPressed)(true);
-      isTouching.value = true;
-      const { locationX, locationY, pageX, pageY } = evt.nativeEvent;
+      const { locationX, locationY } = evt.nativeEvent;
       touchX.value = locationX;
       touchY.value = locationY;
-
-      longPressTimeout.current = setTimeout(() => {
-        // Start the slideshow effect: fade out content and expand ripple
-        contentOpacity.value = withTiming(0, { duration: 600 });
-        ripple.value = { x: pageX, y: pageY, scale: 0 };
-        // Slower ripple duration for a more graceful effect
-        ripple.value.scale = withTiming(1, { duration: 1200 }, () => {
-          runOnJS(setShowSecondScreen)(true);
-        });
-      }, 800); // Slightly longer delay for the long press
+      isTouching.value = true;
     },
-    onPanResponderMove: (
-      evt: GestureResponderEvent,
-      gestureState: PanResponderGestureState
-    ) => {
-      if (longPressTimeout.current) clearTimeout(longPressTimeout.current);
-
+    onPanResponderMove: (evt: GestureResponderEvent) => {
       touchX.value = withSpring(evt.nativeEvent.locationX, {
-        mass: 0.6,
-        damping: 20,
-        stiffness: 150,
+        mass: 0.3,
+        damping: 12,
+        stiffness: 100,
       });
       touchY.value = withSpring(evt.nativeEvent.locationY, {
-        mass: 0.6,
-        damping: 20,
-        stiffness: 150,
+        mass: 0.3,
+        damping: 12,
+        stiffness: 100,
       });
-
-      const velocityScale = 0.2;
-      const stretchX = Math.abs(gestureState.vx) * velocityScale;
-      const stretchY = Math.abs(gestureState.vy) * velocityScale;
-
-      const newScaleX = Math.max(0.8, Math.min(1 + stretchX - stretchY, 1.4));
-      const newScaleY = Math.max(0.8, Math.min(1 + stretchY - stretchX, 1.4));
-
-      scaleX.value = withSpring(newScaleX, { damping: 10, stiffness: 100 });
-      scaleY.value = withSpring(newScaleY, { damping: 10, stiffness: 100 });
     },
     onPanResponderRelease: () => {
-      runOnJS(setIsPressed)(false);
-      if (longPressTimeout.current) clearTimeout(longPressTimeout.current);
-
       isTouching.value = false;
-      scaleX.value = withSpring(1, { damping: 10, stiffness: 100 });
-      scaleY.value = withSpring(1, { damping: 10, stiffness: 100 });
+
+      // Transition to second screen without black screen
+      contentOpacity.value = withTiming(
+        0,
+        {
+          duration: 800,
+        },
+        () => {
+          runOnJS(setShowSecondScreen)(true);
+        }
+      );
     },
   });
 
@@ -160,7 +158,7 @@ export default function HomeScreen() {
       borderRadius: SCREEN_WIDTH * 1.25,
       left: x - SCREEN_WIDTH * 1.25,
       top: y - SCREEN_WIDTH * 1.25,
-      backgroundColor: 'black',
+      backgroundColor: 'transparent', // Changed from 'black' to 'transparent'
       transform: [{ scale }],
     };
   });
@@ -171,9 +169,9 @@ export default function HomeScreen() {
 
   const handleBackPress = () => {
     setShowSecondScreen(false);
-    // Reset animations for the next transition
-    contentOpacity.value = withTiming(1, { duration: 600 });
-    ripple.value = { ...ripple.value, scale: 0 };
+    contentOpacity.value = withTiming(1, {
+      duration: 2000,
+    });
   };
 
   const backgroundImageUri = isPressed
@@ -184,16 +182,32 @@ export default function HomeScreen() {
     return (
       <View style={styles.container}>
         <StatusBar style="light" />
-        <Image
+        <Animated.Image
           source={{
-            uri: 'https://images.pexels.com/photos/1528660/pexels-photo-1528660.jpeg',
+            uri: 'https://images.pexels.com/photos/3225517/pexels-photo-3225517.jpeg',
           }}
-          style={styles.backgroundImage}
+          style={[
+            styles.backgroundImage,
+            {
+              opacity: withSpring(1),
+            },
+          ]}
         />
-        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
         <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
+
+        {/* Adding the bottom navigation bar */}
+        <View style={styles.bottomNavContainer}>
+          <BlurView intensity={30} tint="dark" style={styles.bottomNavBlur}>
+            <TouchableOpacity style={styles.navButton}>
+              <Send size={24} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton}>
+              <MoreHorizontal size={24} color="white" />
+            </TouchableOpacity>
+          </BlurView>
+        </View>
       </View>
     );
   }
@@ -202,17 +216,29 @@ export default function HomeScreen() {
     <View style={styles.container} {...panResponder.panHandlers}>
       <StatusBar style="light" />
       <Image
-        source={{ uri: backgroundImageUri }}
+        source={{
+          uri: 'https://images.pexels.com/photos/3225517/pexels-photo-3225517.jpeg',
+        }}
+        style={[styles.backgroundImage, { opacity: 0.8 }]}
+      />
+      <Image
+        source={{
+          uri: 'https://images.pexels.com/photos/933054/pexels-photo-933054.jpeg',
+        }}
         style={styles.backgroundImage}
       />
 
-      <Orb
-        x={touchX}
-        y={touchY}
-        scaleX={scaleX}
-        scaleY={scaleY}
-        active={isTouching}
-      />
+      {/* Multiple orbs for trail effect */}
+      {[...Array(3)].map((_, index) => (
+        <Orb
+          key={index}
+          x={touchX}
+          y={touchY}
+          scaleX={scaleX}
+          scaleY={scaleY}
+          active={isTouching}
+        />
+      ))}
 
       <Animated.View style={[StyleSheet.absoluteFill, contentStyle]}>
         <ScrollView
