@@ -37,14 +37,15 @@ interface OrbProps {
   scaleX: SharedValue<number>;
   scaleY: SharedValue<number>;
   active: SharedValue<boolean>;
+  touchX: SharedValue<number>;
 }
 
-const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
+const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active, touchX }) => {
   const style = useAnimatedStyle(() => {
     const scale = withSpring(active.value ? 1 : 0, {
-      damping: 15,
-      stiffness: 90,
-      mass: 1,
+      damping: 12,
+      stiffness: 80,
+      mass: 1.2,
     });
 
     return {
@@ -56,18 +57,20 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
       top: y.value - 150,
       transform: [{ scale }],
       overflow: 'hidden',
-      zIndex: 100,
+      zIndex: 99, // Increased to show above most UI elements
     };
   });
 
   const imageStyle = useAnimatedStyle(() => {
+    const velocityScale = Math.max(1, Math.abs(x.value - touchX.value) * 0.015);
     return {
       width: SCREEN_WIDTH,
       height: SCREEN_HEIGHT,
       transform: [
         { translateX: -x.value + 150 },
         { translateY: -y.value + 150 },
-        { scale: 2.5 }, // Increased scale for stronger lens effect
+        { scale: 2.8 * velocityScale },
+        { rotateZ: `${velocityScale * 2}deg` },
       ],
     };
   });
@@ -75,18 +78,30 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
   return (
     <Animated.View style={style}>
       <BlurView
-        intensity={75}
+        intensity={65} // Reduced intensity to better see UI elements
         tint="default"
         style={[
           StyleSheet.absoluteFill,
           {
             borderRadius: 150,
             overflow: 'hidden',
-            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            backgroundColor: 'rgba(255, 255, 255, 0.05)', // More transparent
           },
         ]}
       >
-        {/* Inner radial lens distortion */}
+        {/* Background image with reduced opacity */}
+        <Animated.Image
+          source={{
+            uri: 'https://images.pexels.com/photos/3225517/pexels-photo-3225517.jpeg',
+          }}
+          style={[imageStyle, { opacity: 0.3 }]} // Reduced opacity to show UI better
+          resizeMode="cover"
+        />
+
+        {/* UI capture layer */}
+        <View style={[StyleSheet.absoluteFill, { opacity: 1 }]} />
+
+        {/* Glass effect overlay */}
         <LinearGradient
           colors={[
             'transparent',
@@ -95,43 +110,10 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
           ]}
           style={[
             StyleSheet.absoluteFill,
-            { borderRadius: 150, transform: [{ scale: 1.2 }] },
-          ]}
-          start={{ x: 0.5, y: 0.5 }}
-          end={{ x: 1, y: 1 }}
-        />
-
-        {/* Second image with lens effect */}
-        <Animated.Image
-          source={{
-            uri: 'https://images.pexels.com/photos/3225517/pexels-photo-3225517.jpeg',
-          }}
-          style={[
-            imageStyle,
-            {
-              transform: [
-                { translateX: -x.value + 150 },
-                { translateY: -y.value + 150 },
-                { scale: 2.5 },
-              ],
-            },
-          ]}
-          resizeMode="cover"
-        />
-
-        {/* Outer radial lens effect */}
-        <LinearGradient
-          colors={[
-            'transparent',
-            'rgba(255,255,255,0.2)',
-            'rgba(255,255,255,0.3)',
-          ]}
-          style={[
-            StyleSheet.absoluteFill,
             {
               borderRadius: 150,
               transform: [{ scale: 0.9 }],
-              opacity: 0.7,
+              opacity: 0.4,
             },
           ]}
           start={{ x: 0.3, y: 0.3 }}
@@ -139,17 +121,17 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
         />
       </BlurView>
 
-      {/* Edge blur with lens distortion */}
+      {/* Edge blur with reduced intensity */}
       <BlurView
-        intensity={45}
+        intensity={25}
         tint="default"
         style={[
           StyleSheet.absoluteFill,
           {
             borderRadius: 150,
-            opacity: 0.5,
+            opacity: 0.3,
             borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.2)',
+            borderColor: 'rgba(255,255,255,0.15)',
           },
         ]}
       />
@@ -349,6 +331,7 @@ export default function HomeScreen() {
           scaleX={scaleX}
           scaleY={scaleY}
           active={isTouching}
+          touchX={touchX}
         />
       ))}
 
@@ -434,6 +417,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 20,
+    zIndex: 99,
   },
   genieTitle: {
     fontSize: 32,
@@ -444,6 +428,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderRadius: 20,
     overflow: 'hidden',
+    zIndex: 98, // Ensure it appears above other elements
+    backgroundColor: 'rgba(255, 255, 255, 0.1)', // Added slight background
   },
   cardBlur: {
     padding: 20,
@@ -515,6 +501,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 25,
     paddingVertical: 15,
     borderRadius: 25,
+    zIndex: 99, // Ensure it appears above other elements
   },
   directionsIcon: {
     fontSize: 16,
@@ -532,12 +519,14 @@ const styles = StyleSheet.create({
     right: 60,
     borderRadius: 30,
     overflow: 'hidden',
+    zIndex: 98,
   },
   bottomNavBlur: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
     paddingVertical: 15,
+    backgroundColor: 'rgba(0,0,0,0.3)', // Added slight background
   },
   navButton: {
     padding: 10,
@@ -553,10 +542,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 60,
     left: 20,
-    zIndex: 10,
+    zIndex: 100,
+    padding: 10,
   },
   backText: {
     fontSize: 18,
     color: 'white',
+    fontWeight: '500',
   },
 });
