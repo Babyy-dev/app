@@ -75,13 +75,14 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
   return (
     <Animated.View style={style}>
       <BlurView
-        intensity={25}
-        tint="light"
+        intensity={75} // Increased blur intensity
+        tint="default" // Changed tint for more realistic blur
         style={[
           StyleSheet.absoluteFill,
           {
             borderRadius: 150,
             overflow: 'hidden',
+            backgroundColor: 'rgba(255, 255, 255, 0.1)', // Added slight white overlay
           },
         ]}
       >
@@ -193,11 +194,47 @@ export default function HomeScreen() {
             },
           ]}
         />
-        <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
+
+        {/* Back button moved up */}
+        <TouchableOpacity
+          style={[styles.backButton, { top: 40 }]}
+          onPress={handleBackPress}
+        >
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
 
-        {/* Adding the bottom navigation bar */}
+        {/* Genie header */}
+        <View style={styles.topHeader}>
+          <Text style={styles.genieTitle}>Genie</Text>
+          <TouchableOpacity>
+            <Home size={24} color="white" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Sam name bar */}
+        <View style={styles.cardContainer}>
+          <BlurView intensity={30} tint="dark" style={styles.cardBlur}>
+            <View style={styles.notificationContent}>
+              <Image
+                source={{
+                  uri: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg',
+                }}
+                style={styles.profileImage}
+              />
+              <View style={styles.notificationText}>
+                <Text style={styles.notificationName}>Sam</Text>
+                <Text style={styles.notificationMessage}>
+                  Shared a portal with you
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.replyButton}>
+                <Text style={styles.replyText}>Reply</Text>
+              </TouchableOpacity>
+            </View>
+          </BlurView>
+        </View>
+
+        {/* Bottom navigation */}
         <View style={styles.bottomNavContainer}>
           <BlurView intensity={30} tint="dark" style={styles.bottomNavBlur}>
             <TouchableOpacity style={styles.navButton}>
