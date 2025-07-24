@@ -67,7 +67,7 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
       transform: [
         { translateX: -x.value + 150 },
         { translateY: -y.value + 150 },
-        { scale: 2 },
+        { scale: 2.5 }, // Increased scale for stronger lens effect
       ],
     };
   });
@@ -75,25 +75,84 @@ const Orb: React.FC<OrbProps> = ({ x, y, scaleX, scaleY, active }) => {
   return (
     <Animated.View style={style}>
       <BlurView
-        intensity={75} // Increased blur intensity
-        tint="default" // Changed tint for more realistic blur
+        intensity={75}
+        tint="default"
         style={[
           StyleSheet.absoluteFill,
           {
             borderRadius: 150,
             overflow: 'hidden',
-            backgroundColor: 'rgba(255, 255, 255, 0.1)', // Added slight white overlay
+            backgroundColor: 'rgba(255, 255, 255, 0.1)',
           },
         ]}
       >
+        {/* Inner radial lens distortion */}
+        <LinearGradient
+          colors={[
+            'transparent',
+            'rgba(255,255,255,0.1)',
+            'rgba(255,255,255,0.15)',
+          ]}
+          style={[
+            StyleSheet.absoluteFill,
+            { borderRadius: 150, transform: [{ scale: 1.2 }] },
+          ]}
+          start={{ x: 0.5, y: 0.5 }}
+          end={{ x: 1, y: 1 }}
+        />
+
+        {/* Second image with lens effect */}
         <Animated.Image
           source={{
             uri: 'https://images.pexels.com/photos/3225517/pexels-photo-3225517.jpeg',
           }}
-          style={imageStyle}
+          style={[
+            imageStyle,
+            {
+              transform: [
+                { translateX: -x.value + 150 },
+                { translateY: -y.value + 150 },
+                { scale: 2.5 },
+              ],
+            },
+          ]}
           resizeMode="cover"
         />
+
+        {/* Outer radial lens effect */}
+        <LinearGradient
+          colors={[
+            'transparent',
+            'rgba(255,255,255,0.2)',
+            'rgba(255,255,255,0.3)',
+          ]}
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              borderRadius: 150,
+              transform: [{ scale: 0.9 }],
+              opacity: 0.7,
+            },
+          ]}
+          start={{ x: 0.3, y: 0.3 }}
+          end={{ x: 0.7, y: 0.7 }}
+        />
       </BlurView>
+
+      {/* Edge blur with lens distortion */}
+      <BlurView
+        intensity={45}
+        tint="default"
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            borderRadius: 150,
+            opacity: 0.5,
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.2)',
+          },
+        ]}
+      />
     </Animated.View>
   );
 };
@@ -107,7 +166,13 @@ export default function HomeScreen() {
   const isTouching = useSharedValue(false);
   const scaleX = useSharedValue(1);
   const scaleY = useSharedValue(1);
-  const longPressTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [backgroundState, setBackgroundState] = useState('first'); // Add this state
+  const longPressTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Add this function to handle background change
+  const handleLongPress = () => {
+    setBackgroundState('second');
+  };
 
   // Shared values for the new slideshow transition
   const ripple = useSharedValue({ x: 0, y: 0, scale: 0 });
@@ -121,20 +186,32 @@ export default function HomeScreen() {
       touchX.value = locationX;
       touchY.value = locationY;
       isTouching.value = true;
+
+      // Start long press timer
+      longPressTimeout.current = setTimeout(handleLongPress, 500); // 500ms for long press
     },
     onPanResponderMove: (evt: GestureResponderEvent) => {
+      if (longPressTimeout.current) {
+        clearTimeout(longPressTimeout.current);
+      }
       touchX.value = withSpring(evt.nativeEvent.locationX, {
-        mass: 0.3,
-        damping: 12,
-        stiffness: 100,
+        mass: 0.1,
+        damping: 15,
+        stiffness: 200,
+        overshootClamping: true,
       });
       touchY.value = withSpring(evt.nativeEvent.locationY, {
-        mass: 0.3,
-        damping: 12,
-        stiffness: 100,
+        mass: 0.1,
+        damping: 15,
+        stiffness: 200,
+        overshootClamping: true,
       });
     },
     onPanResponderRelease: () => {
+      // Clear timeout on release
+      if (longPressTimeout.current) {
+        clearTimeout(longPressTimeout.current);
+      }
       isTouching.value = false;
 
       // Transition to second screen without black screen
@@ -170,6 +247,7 @@ export default function HomeScreen() {
 
   const handleBackPress = () => {
     setShowSecondScreen(false);
+    setBackgroundState('first'); // Reset background on back press
     contentOpacity.value = withTiming(1, {
       duration: 2000,
     });
@@ -252,17 +330,14 @@ export default function HomeScreen() {
   return (
     <View style={styles.container} {...panResponder.panHandlers}>
       <StatusBar style="light" />
-      <Image
+      <Animated.Image
         source={{
-          uri: 'https://images.pexels.com/photos/3225517/pexels-photo-3225517.jpeg',
+          uri:
+            backgroundState === 'first'
+              ? 'https://images.pexels.com/photos/933054/pexels-photo-933054.jpeg'
+              : 'https://images.pexels.com/photos/3225517/pexels-photo-3225517.jpeg',
         }}
-        style={[styles.backgroundImage, { opacity: 0.8 }]}
-      />
-      <Image
-        source={{
-          uri: 'https://images.pexels.com/photos/933054/pexels-photo-933054.jpeg',
-        }}
-        style={styles.backgroundImage}
+        style={[styles.backgroundImage]}
       />
 
       {/* Multiple orbs for trail effect */}
